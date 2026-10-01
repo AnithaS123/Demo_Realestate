@@ -1,0 +1,10 @@
+{
+  "buyer_id": "BUYER-001",
+  "display_name": "Nadia Sample",
+  "nationality": "Jordanian",
+  "unit_id": "UNIT-SIM-101",
+  "development": "Cedar Quay Residences",
+  "status": "documents_received",
+  "case_summary": "Synthetic clean onboarding case for demonstration.",
+  "documents": ["passport", "emirates_id", "bank_statement", "salary_certificate"]
+}

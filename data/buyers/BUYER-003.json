@@ -1,0 +1,10 @@
+{
+  "buyer_id": "BUYER-003",
+  "display_name": "Layla Demo",
+  "nationality": "Lebanese",
+  "unit_id": "UNIT-SIM-309",
+  "development": "Palm Lantern Villas",
+  "status": "source_of_funds_review",
+  "case_summary": "Synthetic case with mixed salary and savings evidence.",
+  "documents": ["passport", "emirates_id", "bank_statement", "salary_certificate"]
+}

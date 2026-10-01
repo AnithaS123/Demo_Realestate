@@ -1,0 +1,10 @@
+{
+  "buyer_id": "BUYER-004",
+  "display_name": "Samir Fiction",
+  "nationality": "Egyptian",
+  "unit_id": "UNIT-SIM-412",
+  "development": "Palm Lantern Villas",
+  "status": "identity_review",
+  "case_summary": "Synthetic case with a minor transliteration discrepancy between documents.",
+  "documents": ["passport", "emirates_id", "bank_statement", "salary_certificate"]
+}

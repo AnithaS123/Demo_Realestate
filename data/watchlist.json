@@ -1,0 +1,16 @@
+[
+  {
+    "watchlist_ref": "SYN-WL-001",
+    "name": "Omar Example",
+    "aliases": ["Umar Example", "Omar Exampel", "عمر مثال"],
+    "nationalities": ["Fictional Republic", "Imaginary State"],
+    "note": "Entirely fictional demonstration entry."
+  },
+  {
+    "watchlist_ref": "SYN-WL-002",
+    "name": "Rami Nearmatch",
+    "aliases": ["Ramy Nearmatch", "Rami Near-Match", "رامي نيرماتش"],
+    "nationalities": ["Jordanian", "Lebanese"],
+    "note": "Deliberate near-miss fixture to demonstrate fuzzy matching and human review."
+  }
+]

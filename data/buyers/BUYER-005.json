@@ -1,0 +1,10 @@
+{
+  "buyer_id": "BUYER-005",
+  "display_name": "Mira Fictional",
+  "nationality": "Indian",
+  "unit_id": "UNIT-SIM-518",
+  "development": "Cedar Quay Residences",
+  "status": "documents_received",
+  "case_summary": "Synthetic case with a large deposit and incomplete supporting narrative.",
+  "documents": ["passport", "emirates_id", "bank_statement", "salary_certificate"]
+}

@@ -1,0 +1,34 @@
+# Local credentials/config; keep only the safe template in Git.
+.env
+.env.*
+!.env.example
+
+# Python environments, bytecode, caches, coverage, and build output.
+__pycache__/
+.venv/
+*.pyc
+.pytest_cache/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+.coverage
+build/
+dist/
+
+# Runtime logs, local editor/OS files, and downloaded installers.
+logs/
+*.log
+.DS_Store
+*.pkg
+*.zip
+
+# Generated account-specific IAM documents and Lambda deployment bundles.
+/trust-policy.json
+/assume-policy.json
+/function.zip
+/iam/bedrock-invoke.json
+/iam/lambda-invoke.json
+
+# Local dependency and secret stores.
+node_modules/
+.streamlit/secrets.toml*.pkg

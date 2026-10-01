@@ -1,0 +1,6 @@
+FICTIONAL TRAINING DOCUMENT — NOT AN IDENTITY DOCUMENT
+Document type: Passport
+Name: Layla Demo
+Nationality: Lebanese
+Passport reference: SIM-P-003
+Expiry: 2030-08-01

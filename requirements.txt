@@ -1,0 +1,4 @@
+mcp[cli]>=2.2,<3
+python-dotenv>=1.0,<2
+boto3>=1.35,<2
+streamlit>=1.39,<2

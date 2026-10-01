@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ExplicitlyDenyRestrictedInvocationForNonCompliancePersona",
+      "Effect": "Deny",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "REPLACE_WITH_RESTRICTED_ACTION_LAMBDA_ARN",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:PrincipalTag/HumanRole": "Compliance Officer"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRestrictedInvocationWithoutPersonaTag",
+      "Effect": "Deny",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "REPLACE_WITH_RESTRICTED_ACTION_LAMBDA_ARN",
+      "Condition": {
+        "Null": {
+          "aws:PrincipalTag/HumanRole": "true"
+        }
+      }
+    },
+    {
+      "Sid": "AllowRestrictedInvocationForCompliancePersona",
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "REPLACE_WITH_RESTRICTED_ACTION_LAMBDA_ARN",
+      "Condition": {
+        "StringEquals": {
+          "aws:PrincipalTag/HumanRole": "Compliance Officer"
+        }
+      }
+    }
+  ]
+}

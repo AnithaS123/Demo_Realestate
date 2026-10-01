@@ -1,0 +1,10 @@
+{
+  "buyer_id": "BUYER-002",
+  "display_name": "Omar Example",
+  "nationality": "Fictional Republic",
+  "unit_id": "UNIT-SIM-204",
+  "development": "Cedar Quay Residences",
+  "status": "screening_review",
+  "case_summary": "Synthetic case deliberately aligned with a fictional watchlist entry.",
+  "documents": ["passport", "emirates_id", "bank_statement", "salary_certificate"]
+}
