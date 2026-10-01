@@ -18,7 +18,7 @@ The local Streamlit persona is not authentication. This sample passes a `HumanRo
 
 The request goes through the Lambda `Invoke` API, which requires `lambda:InvokeFunction`. Attach `registration-lambda-invoke-policy.template.json` as an inline policy **only on `demo-registration-agent`** after replacing every `REPLACE_WITH_RESTRICTED_ACTION_LAMBDA_ARN` with the actual function ARN. The template has an explicit deny when the assumed-role session tag `HumanRole` is absent or is not `Compliance Officer`, then an allow when it matches. The Document and Screening roles must not receive Lambda invoke permission; remove any unrelated policies that would grant it.
 
-This condition works only when the STS `AssumeRole` request contains the `HumanRole` tag, the role trust permits `sts:TagSession`, and the app passes `HumanRole=...`. Confirm the policy in your own account; SCPs, permission boundaries, session policies, and resource policies can also affect evaluation. A Lambda console test executes as the console's identity and does **not** test this role boundary.
+This condition works only when the STS `AssumeRole` request contains the `HumanRole` tag, **both** the role trust policy and caller identity policy permit `sts:TagSession`, and the app passes `HumanRole=...`. `scripts/01-setup-iam.sh` configures these caller/trust permissions for all three roles. Confirm the policy in your own account; SCPs, permission boundaries, session policies, and resource policies can also affect evaluation. A Lambda console test executes as the console's identity and does **not** test this role boundary.
 
 ## Allow Bedrock narrowly
 
@@ -38,6 +38,14 @@ bash scripts/03-verify.sh
 
 Review every planned change before applying it in a shared AWS account. The setup script updates trust policies and an inline role-assumption policy. It deliberately does not attach Bedrock or Lambda permissions.
 
-After policy attachment, verify with actual assumed-role calls. Assume each specialist role with `HumanRole=Sales Agent`, then invoke the Lambda using the resulting role credentials: a non-Registration role should be denied because it has no invoke permission; Registration should be explicitly denied by its condition. Repeat with `HumanRole=Compliance Officer`: the Registration role can invoke; Document/Screening still cannot. Do not use an IAM policy simulator as proof of a real request denial. Verify outcomes from the actual Lambda Invoke API and audit the AWS request/error code.
+After policy attachment and Lambda deployment, run the focused end-to-end check from the repository root:
+
+```zsh
+python scripts/04-verify-registration-boundary.py
+```
+
+It assumes `demo-registration-agent` twice using the app's shared STS helper and sends the exact `HumanRole` tag. For both `approve_buyer` and `submit_oqood_registration`, Buyer must get AWS `AccessDenied` and Compliance Officer must get a real Lambda response. Do not use an IAM policy simulator as proof of a real request denial. Verify the actual Lambda Invoke API result and request/error ID.
+
+The app and tools catch service-side `AccessDenied` from the Lambda Invoke API and show the denial in the governance panel. A local conditional, a tool list, a prompt refusal, or an exception manually raised by application code is not equivalent.
 
 The app and tools catch service-side `AccessDenied` from the Lambda Invoke API and show the denial in the governance panel. A local conditional, a tool list, a prompt refusal, or an exception manually raised by application code is not equivalent.

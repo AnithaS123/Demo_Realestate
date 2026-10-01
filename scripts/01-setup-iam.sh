@@ -29,7 +29,7 @@ cat > iam/assume-policy.json <<EOF
   "Version": "2012-10-17",
   "Statement": [{
     "Effect": "Allow",
-    "Action": "sts:AssumeRole",
+    "Action": ["sts:AssumeRole", "sts:TagSession"],
     "Condition": {
       "ForAllValues:StringEquals": {"aws:TagKeys": ["HumanRole"]},
       "StringEquals": {"aws:RequestTag/HumanRole": ["Buyer", "Sales Agent", "Compliance Officer"]}

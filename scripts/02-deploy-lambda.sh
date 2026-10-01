@@ -26,25 +26,29 @@ if ! aws iam get-role --role-name "$EXEC_ROLE" >/dev/null 2>&1; then
     }' >/dev/null
   aws iam attach-role-policy --role-name "$EXEC_ROLE" \
     --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-  echo "Waiting for role propagation..."
-  sleep 10
+  echo "Waiting for Lambda execution role..."
+  aws iam wait role-exists --role-name "$EXEC_ROLE"
 fi
 
-# --- Deploy the Lambda with the handler at the ZIP root ---
+# --- Deploy the Lambda package with the handler module under restricted_action/ ---
 rm -f function.zip
-(cd lambda/restricted_action && zip -q -j ../../function.zip lambda_function.py)
+(cd lambda && zip -q -r ../function.zip restricted_action \
+  -x '*/__pycache__/*' '*.pyc' '*/.DS_Store')
 
 if aws lambda get-function --function-name "$FN" >/dev/null 2>&1; then
   echo "Updating $FN"
   aws lambda update-function-code --function-name "$FN" \
     --zip-file fileb://function.zip --query 'FunctionArn' --output text
   aws lambda wait function-updated-v2 --function-name "$FN"
+  aws lambda update-function-configuration --function-name "$FN" \
+    --handler restricted_action.lambda_function.lambda_handler >/dev/null
+  aws lambda wait function-updated-v2 --function-name "$FN"
 else
   echo "Creating $FN"
   aws lambda create-function --function-name "$FN" \
     --runtime python3.12 \
     --role "arn:aws:iam::${ACCOUNT_ID}:role/${EXEC_ROLE}" \
-    --handler lambda_function.lambda_handler \
+    --handler restricted_action.lambda_function.lambda_handler \
     --zip-file fileb://function.zip \
     --query 'FunctionArn' --output text
   aws lambda wait function-active-v2 --function-name "$FN"

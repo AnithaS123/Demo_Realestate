@@ -14,6 +14,7 @@ from src.audit.log import append_tool_event
 from src.auth.roles import AgentName, assume_agent_session
 from src.config import ConfigurationError, settings
 from src.agents.tools import TOOLS_BY_AGENT, ToolOutcome, execute_tool
+from src.agents.runtime_status import mark_bedrock_success
 
 logger = logging.getLogger(__name__)
 EventCallback = Callable[[dict[str, Any]], None]
@@ -46,6 +47,7 @@ def _bedrock_tools(
     correlation_id: str,
     on_event: EventCallback,
     iam_role_arn: str,
+    session_tags: dict[str, str],
     max_rounds: int = 5,
 ) -> str:
     """Run Bedrock Converse tool-use loop using only the selected agent's tool schema."""
@@ -63,6 +65,7 @@ def _bedrock_tools(
             toolConfig={"tools": [tool.bedrock_spec() for tool in definitions]},
             inferenceConfig={"maxTokens": 900, "temperature": 0.1},
         )
+        mark_bedrock_success(model_id)
         assistant_message = response.get("output", {}).get("message", {"role": "assistant", "content": []})
         messages.append(assistant_message)
         tool_uses = [block["toolUse"] for block in assistant_message.get("content", []) if "toolUse" in block]
@@ -102,6 +105,7 @@ def _bedrock_tools(
                 correlation_id=correlation_id,
                 detail=outcome.detail,
                 iam_role_arn=iam_role_arn,
+                iam_session_tags=session_tags,
                 aws_error_code=outcome.aws_error_code,
                 aws_request_id=outcome.aws_request_id,
             )
@@ -133,6 +137,7 @@ def run_specialist(
         "Registration Agent": (settings.iam_role_arn_registration_agent, "IAM_ROLE_ARN_REGISTRATION_AGENT"),
     }[agent_name]
     role_display = role_setting or f"{role_env_name} is not configured"
+    session_tags = {"HumanRole": human_role}
     try:
         session = assume_agent_session(agent_name, human_role, correlation_id)
     except ConfigurationError as error:
@@ -145,10 +150,17 @@ def run_specialist(
             correlation_id=correlation_id,
             detail=str(error),
             iam_role_arn=role_display,
+            iam_session_tags=session_tags,
         ))
         return f"Agent configuration required: {error}"
     except (ClientError, BotoCoreError) as error:
-        logger.warning("Unable to assume specialist role", extra={"agent_name": agent_name, "error_type": type(error).__name__})
+        full_error_message = str(error)
+        logger.error(
+            "STS AssumeRole failed for agent=%s target_role=%s: %s",
+            agent_name,
+            role_display,
+            full_error_message,
+        )
         error_code = str(error.response.get("Error", {}).get("Code", "")) if isinstance(error, ClientError) else ""
         request_id = str(error.response.get("ResponseMetadata", {}).get("RequestId", "")) if isinstance(error, ClientError) else ""
         on_event(append_tool_event(
@@ -158,12 +170,13 @@ def run_specialist(
             arguments={"agent": agent_name},
             outcome="denied" if error_code in {"AccessDenied", "AccessDeniedException"} else "error",
             correlation_id=correlation_id,
-            detail="AWS STS denied the role assumption." if error_code in {"AccessDenied", "AccessDeniedException"} else "Could not assume specialist role; check AWS credentials and trust policy.",
+            detail=full_error_message,
             iam_role_arn=role_display,
+            iam_session_tags=session_tags,
             aws_error_code=error_code,
             aws_request_id=request_id,
         ))
-        return f"Could not assume {agent_name} role. Check the IAM trust and sts:AssumeRole permissions."
+        return f"Could not assume {agent_name}. AWS returned: {full_error_message}"
     except ValueError as error:
         on_event(append_tool_event(
             human_role=human_role,
@@ -174,11 +187,21 @@ def run_specialist(
             correlation_id=correlation_id,
             detail=str(error),
             iam_role_arn=role_display,
+            iam_session_tags=session_tags,
         ))
         return f"Invalid role/session configuration: {error}"
 
     try:
-        return _bedrock_tools(session, agent_name, user_text, human_role, correlation_id, on_event, role_setting)
+        return _bedrock_tools(
+            session,
+            agent_name,
+            user_text,
+            human_role,
+            correlation_id,
+            on_event,
+            role_setting,
+            session_tags,
+        )
     except ConfigurationError as error:
         return f"Agent configuration required: {error}"
     except (ClientError, BotoCoreError) as error:

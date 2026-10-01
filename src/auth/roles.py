@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import json
+import logging
 from typing import Literal
 
 import boto3
@@ -10,6 +12,8 @@ import boto3
 from src.config import ConfigurationError, settings
 
 AgentName = Literal["Document Agent", "Screening Agent", "Registration Agent"]
+HUMAN_ROLE_TAG_KEY = "HumanRole"
+logger = logging.getLogger(__name__)
 
 _ROLE_SETTINGS: dict[str, tuple[str, str]] = {
     "Document Agent": ("iam_role_arn_document_agent", "IAM_ROLE_ARN_DOCUMENT_AGENT"),
@@ -19,15 +23,35 @@ _ROLE_SETTINGS: dict[str, tuple[str, str]] = {
 
 
 def base_session() -> boto3.Session:
-    """Create a boto3 session from configured explicit keys or the AWS provider chain."""
-    if settings.aws_access_key_id and settings.aws_secret_access_key:
-        return boto3.Session(
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            aws_session_token=settings.aws_session_token or None,
-            region_name=settings.aws_region,
-        )
-    return boto3.Session(region_name=settings.aws_region)
+    """Create a boto3 session using only the explicit credentials loaded from `.env`."""
+    access_key = settings.aws_access_key_id
+    secret_key = settings.aws_secret_access_key
+    if not access_key:
+        raise ConfigurationError("AWS_ACCESS_KEY_ID is not set in .env")
+    if not secret_key:
+        raise ConfigurationError("AWS_SECRET_ACCESS_KEY is not set in .env")
+    return boto3.Session(
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        aws_session_token=settings.aws_session_token or None,
+        region_name=settings.aws_region,
+    )
+
+
+def get_caller_identity() -> dict[str, str]:
+    """Return the AWS caller identity for the explicit `.env` credential session."""
+    response = base_session().client("sts", region_name=settings.aws_region).get_caller_identity()
+    identity = {
+        "account": str(response.get("Account", "")),
+        "arn": str(response.get("Arn", "")),
+        "user_id": str(response.get("UserId", "")),
+        "credential_source": ".env explicit credentials",
+    }
+    logger.info(
+        "AWS caller identity resolved: account=%s arn=%s user_id=%s source=%s",
+        identity["account"], identity["arn"], identity["user_id"], identity["credential_source"],
+    )
+    return identity
 
 
 def assume_agent_session(
@@ -46,12 +70,24 @@ def assume_agent_session(
     allowed_personas = {"Buyer", "Sales Agent", "Compliance Officer"}
     if human_role not in allowed_personas:
         raise ValueError("Human role must be Buyer, Sales Agent, or Compliance Officer")
+    role_session_name = f"buyer-demo-{agent_name.split()[0].lower()}-{correlation_id[:8]}"
+    tags = [{"Key": HUMAN_ROLE_TAG_KEY, "Value": human_role}]
+    transitive_tag_keys = [HUMAN_ROLE_TAG_KEY]
+    assume_parameters = {
+        "RoleArn": role_arn,
+        "RoleSessionName": role_session_name,
+        "Tags": tags,
+        "TransitiveTagKeys": transitive_tag_keys,
+        "Policy": None,
+        "PolicyArns": None,
+    }
+    logger.info("STS AssumeRole request parameters: %s", json.dumps(assume_parameters, sort_keys=True))
     sts = base_session().client("sts", region_name=settings.aws_region)
     response = sts.assume_role(
         RoleArn=role_arn,
-        RoleSessionName=f"buyer-demo-{agent_name.split()[0].lower()}-{correlation_id[:8]}",
-        Tags=[{"Key": "HumanRole", "Value": human_role}],
-        TransitiveTagKeys=["HumanRole"],
+        RoleSessionName=role_session_name,
+        Tags=tags,
+        TransitiveTagKeys=transitive_tag_keys,
     )
     credentials = response["Credentials"]
     return boto3.Session(

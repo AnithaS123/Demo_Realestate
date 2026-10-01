@@ -42,6 +42,7 @@ def append_tool_event(
     correlation_id: str,
     detail: str = "",
     iam_role_arn: str = "",
+    iam_session_tags: dict[str, str] | None = None,
     aws_error_code: str = "",
     aws_request_id: str = "",
 ) -> dict[str, Any]:
@@ -58,6 +59,7 @@ def append_tool_event(
         "correlation_id": correlation_id,
         "detail": detail[:500],
         "iam_role_arn": iam_role_arn[:256],
+        "iam_session_tags": _sanitize(iam_session_tags or {}),
         "aws_error_code": aws_error_code[:100],
         "aws_request_id": aws_request_id[:100],
     }

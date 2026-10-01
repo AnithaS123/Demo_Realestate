@@ -58,7 +58,7 @@ For later AWS stages:
 
 ### Bedrock access is not an API key
 
-Amazon Bedrock normally uses AWS IAM credentials and SigV4-signed SDK requests; it does **not** give you a standalone Bedrock API key to paste into `.env`. For a local demo, use an IAM user/Identity Center/assumed-role credential chain with narrowly scoped permissions. The current project has optional `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` fields for the eventual explicit local-credential path, but AWS's default credential chain or short-lived credentials are preferred where practical.
+Amazon Bedrock normally uses AWS IAM credentials and SigV4-signed SDK requests; it does **not** give you a standalone Bedrock API key to paste into `.env`. This app explicitly uses `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `AWS_SESSION_TOKEN` from the project-root `.env` for AWS requests; it will not silently fall back to environment profiles or the default boto3 credential chain. These values are still optional for local fixture-only UI use, but all AWS-backed features require them.
 
 ## Optional: inspect the MCP tools
 
@@ -171,8 +171,8 @@ Use the same Region as the Bedrock model. Do not paste the output if it contains
 
 | Variable | Required now? | Purpose |
 |---|---:|---|
-| `AWS_ACCESS_KEY_ID` | No | Optional explicit local AWS access key for future AWS calls. Prefer role/SSO credentials. |
-| `AWS_SECRET_ACCESS_KEY` | No | Secret paired with the optional access key. Keep private. |
+| `AWS_ACCESS_KEY_ID` | Only for AWS features | Explicit local AWS access key consumed by the app from `.env`. |
+| `AWS_SECRET_ACCESS_KEY` | Only for AWS features | Secret paired with the explicit access key. Keep private. |
 | `AWS_SESSION_TOKEN` | No | Temporary session token when using short-lived STS credentials. |
 | `AWS_REGION` | No (defaults to `us-east-1`) | Region for later AWS clients and Bedrock. |
 | `BEDROCK_MODEL_ID` | No | Bedrock model ID; needed when the Bedrock agent step is implemented. |

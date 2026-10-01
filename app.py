@@ -10,11 +10,13 @@ import uuid
 from typing import Any
 
 import streamlit as st
+from botocore.exceptions import BotoCoreError, ClientError
 
 from src.agents.document_agent import run_document_agent
 from src.agents.registration_agent import run_registration_agent
 from src.agents.screening_agent import run_screening_agent
 from src.agents.supervisor import route_request
+from src.auth.roles import get_caller_identity
 from src.audit.log import append_tool_event
 from src.config import ConfigurationError, settings
 from src.mcp_server.server import _read_buyer_profile, _screen_sanctions
@@ -43,6 +45,23 @@ def _dispatch_specialist(
     if agent_name == "Screening Agent":
         return run_screening_agent(prompt, human_role, correlation_id, on_event)
     return run_registration_agent(prompt, human_role, correlation_id, on_event)
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _startup_caller_identity() -> dict[str, str]:
+    """Resolve AWS caller identity once per minute using explicit `.env` credentials."""
+    try:
+        return get_caller_identity()
+    except ConfigurationError as error:
+        logger.warning("AWS caller identity unavailable: %s", error)
+        return {"status": "not_configured", "message": str(error), "credential_source": ".env explicit credentials"}
+    except (ClientError, BotoCoreError) as error:
+        logger.error("AWS GetCallerIdentity failed: %s", error)
+        return {"status": "error", "message": str(error), "credential_source": ".env explicit credentials"}
+
+
+CALLER_IDENTITY = _startup_caller_identity()
+st.session_state["aws_caller_identity"] = CALLER_IDENTITY
 
 st.markdown(
     """
@@ -135,12 +154,17 @@ def _friendly_off_topic(trace: list[dict[str, Any]], human_role: str, correlatio
 
 def _append_route_trace(trace: list[dict[str, Any]], route: str, reason: str, bedrock_routed: bool) -> None:
     """Add a routing-only step for the governance panel (not a tool call)."""
+    tools_by_agent = {
+        "Document Agent": ["get_buyer_profile", "extract_document_fields"],
+        "Screening Agent": ["screen_sanctions", "assess_source_of_funds"],
+        "Registration Agent": ["approve_buyer", "submit_oqood_registration"],
+    }
     trace.append({
         "timestamp": "",
         "human_role": st.session_state.get("human_role", "Demo persona"),
         "agent_name": "Supervisor",
         "tool": "route_request",
-        "arguments": {"route": route},
+        "arguments": {"route": route, "available_tools": tools_by_agent.get(route, [])},
         "outcome": "allowed",
         "detail": reason if bedrock_routed else f"{reason} This routing step has no tools or permissions.",
         "correlation_id": st.session_state.get("active_correlation_id", ""),
@@ -353,7 +377,16 @@ def _run_attack(human_role: str, buyer_id: str, correlation_id: str, trace: list
 def _render_governance(trace: list[dict[str, Any]], correlation_id: str) -> None:
     """Render a high-contrast, expandable governance trace under one assistant turn."""
     with st.expander(f"Governance trace · {len(trace)} steps · {correlation_id[:8]}", expanded=True):
-        st.caption("Routing has no tools. Tool outcomes come from the local read-only fixture path or AWS service response.")
+        caller_identity = st.session_state.get("aws_caller_identity", {})
+        if caller_identity.get("arn"):
+            caller_arn = str(caller_identity["arn"])
+            caller_name = caller_arn.rsplit("/", 1)[-1].split(":", 1)[-1]
+            st.caption(f"App AWS caller · {caller_name}")
+        else:
+            st.caption(
+                f"App AWS caller unavailable · {caller_identity.get('message', 'unknown status')} · "
+                f"source: {caller_identity.get('credential_source', 'unknown')}"
+            )
         if not trace:
             st.info("No tool calls were made in this response.")
             return
@@ -370,12 +403,18 @@ def _render_governance(trace: list[dict[str, Any]], correlation_id: str) -> None
             tool = event.get("tool", "step")
             detail = html.escape(str(event.get("detail", "")))
             role_arn = html.escape(str(event.get("iam_role_arn") or "Not assumed"))
+            session_tags = event.get("iam_session_tags", {})
+            session_tags_text = ", ".join(
+                f"{html.escape(str(key))}={html.escape(str(value))}"
+                for key, value in session_tags.items()
+            ) or "None"
             args = event.get("arguments", {})
             args_text = " · ".join(f"{html.escape(str(key))}: {html.escape(str(value))}" for key, value in args.items())
             st.markdown(
                 f"<div class='governance'><span class='badge {css_class}'>{outcome_label}</span> "
                 f"<span class='governance-title'>{html.escape(str(agent))}</span> · <code>{html.escape(str(tool))}</code>"
                 f"<div class='governance-meta'>Assumed IAM role: {role_arn}</div>"
+                f"<div class='governance-meta'>STS session tags: {session_tags_text}</div>"
                 f"<div class='governance-detail'>{detail}</div>"
                 f"<div class='governance-meta'>Arguments: {args_text or 'None'}</div></div>",
                 unsafe_allow_html=True,
@@ -410,17 +449,30 @@ with st.sidebar:
     st.metric("Case status", str(profile.get("status", "unknown")).replace("_", " ").title())
     st.caption(f"{profile.get('display_name', '')} · {profile.get('development', '')} · {profile.get('unit_id', '')}")
     st.divider()
-    if settings.bedrock_model_id:
-        st.info("Bedrock model ID present; AWS access not verified")
-    else:
-        st.info("Local fixture mode · BEDROCK_MODEL_ID is blank")
-    if settings.restricted_action_lambda_arn:
-        st.info("Lambda ARN present; invocation permission not verified")
-    else:
-        st.info("Restricted actions unavailable until Lambda ARN is configured")
     if st.button("Run poisoned-document attack", type="primary", use_container_width=True):
         st.session_state["attack_requested"] = True
     st.caption("Attack fixture: BUYER-005 bank statement. Its embedded instruction is untrusted test content.")
+    with st.expander("Diagnostics", expanded=False):
+        if st.session_state.get("bedrock_verified"):
+            st.success(f"Bedrock invoked successfully · {st.session_state.get('bedrock_verified_model_id', settings.bedrock_model_id)}")
+        elif settings.bedrock_model_id:
+            st.info("Bedrock configured · waiting for a successful call")
+        else:
+            st.info("Local fixture mode · BEDROCK_MODEL_ID is blank")
+        if CALLER_IDENTITY.get("arn"):
+            st.caption(f"AWS caller: {CALLER_IDENTITY['arn']}")
+        else:
+            st.warning(f"AWS caller identity unavailable: {CALLER_IDENTITY.get('message', 'unknown error')}")
+        if st.session_state.get("lambda_invoke_attempted"):
+            lambda_outcome = st.session_state.get("lambda_invoke_outcome", "ATTEMPTED")
+            st.info(f"Lambda invoke attempted · {lambda_outcome}")
+            lambda_detail = st.session_state.get("lambda_invoke_message", "")
+            if lambda_detail:
+                st.caption(lambda_detail)
+        elif settings.restricted_action_lambda_arn:
+            st.info("Lambda configured · waiting for an invoke attempt")
+        else:
+            st.info("Restricted actions unavailable until Lambda ARN is configured")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -486,3 +538,4 @@ if user_prompt:
         "trace": trace,
         "correlation_id": correlation_id,
     })
+    st.rerun()

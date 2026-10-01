@@ -9,10 +9,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import boto3
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError
 
 from src.auth.roles import bedrock_text
 from src.config import ConfigurationError, settings
+from src.agents.runtime_status import mark_lambda_attempt
 from src.mcp_server.server import _load_json, _normalise, _similarity, _read_buyer_profile, _screen_sanctions
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,7 @@ def _invoke_restricted_action(
     if re.fullmatch(r"UNIT-SIM-[0-9]{3}", unit_id) is None:
         raise ValueError("unit_id must use the synthetic UNIT-SIM-### format")
     client = session.client("lambda", region_name=settings.aws_region)
+    mark_lambda_attempt("IN PROGRESS", "Lambda Invoke API request has been sent.")
     try:
         response = client.invoke(
             FunctionName=lambda_arn,
@@ -144,6 +146,7 @@ def _invoke_restricted_action(
         error_code = str(error.response.get("Error", {}).get("Code", "AWSClientError"))
         request_id = str(error.response.get("ResponseMetadata", {}).get("RequestId", ""))
         if error_code in {"AccessDenied", "AccessDeniedException", "UnauthorizedOperation"}:
+            mark_lambda_attempt("DENIED", str(error))
             logger.info("IAM denied restricted action", extra={"operation": operation, "aws_error_code": error_code})
             return ToolOutcome(
                 {"status": "DENIED", "authority": "AWS IAM", "message": "AWS IAM denied this Lambda invocation."},
@@ -152,15 +155,21 @@ def _invoke_restricted_action(
                 aws_error_code=error_code,
                 aws_request_id=request_id,
             )
+        mark_lambda_attempt("ERROR", str(error))
+        raise
+    except BotoCoreError as error:
+        mark_lambda_attempt("ERROR", str(error))
         raise
     payload = json.loads(response["Payload"].read().decode("utf-8"))
     if response.get("FunctionError"):
+        mark_lambda_attempt("LAMBDA ERROR", str(payload))
         return ToolOutcome(
             {"status": "ERROR", "message": "The demo Lambda reported an execution error."},
             outcome="error",
             detail=str(payload)[:400],
             aws_request_id=str(response.get("ResponseMetadata", {}).get("RequestId", "")),
         )
+    mark_lambda_attempt("RESPONSE RECEIVED", "Lambda Invoke API returned a response.")
     return ToolOutcome(
         payload,
         detail="Request reached the IAM-protected demo Lambda; it does not submit to DLD/Oqood.",
